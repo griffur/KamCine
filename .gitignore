@@ -1,0 +1,17 @@
+# Données d'une installation : jamais dans le dépôt
+config/
+*.json
+!docker/licenses/rust-crates.json
+!app/manifest.webmanifest
+*.db
+*.db-wal
+*.db-shm
+*.log
+creds.env
+backups/
+avatars/
+__pycache__/
+*.pyc
+.DS_Store
+.idea/
+.vscode/

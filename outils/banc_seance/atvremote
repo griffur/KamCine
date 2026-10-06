@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+"""Faux atvremote : un Apple TV minimal avec Infuse (le film) et YouTube (bandes annonces, entracte). Lecture qui avance en temps réel."""
+import json, os, re, sys, time
+ETAT = os.environ.get("FAKE_ATV_STATE", "/tmp/fake_atv.json")
+VIDEOS = json.loads(os.environ.get("FAKE_ATV_VIDEOS", "{}"))     # id -> [titre, durée]
+FILM = (os.environ.get("FAKE_ATV_FILM", "99 Francs"), int(os.environ.get("FAKE_ATV_TOTAL", "6000")))
+LOG = os.environ.get("FAKE_ATV_LOG")
+# Média tout juste ajouté, pas encore indexé par Infuse : le lien ouvre une recherche (rien ne joue) jusqu'à ce
+# délai depuis le tout premier essai, puis Infuse "retrouve" le film normalement au prochain lien reçu.
+INDEX_DELAI = float(os.environ.get("FAKE_ATV_INDEX_DELAI", "0"))
+# Reprise bloquée après un retour à Infuse (bandes annonces) : les premières commandes "play" ne relancent rien,
+# comme une reprise anormalement lente (rebufferisation) qui dépasse la patience habituelle d'attendre_lecture().
+# Nombre de tentatives ignorées avant que "play" fonctionne de nouveau ; -1 = jamais (reprise qui ne revient pas).
+JOUER_BLOQUE = int(os.environ.get("FAKE_ATV_JOUER_BLOQUE", "0"))
+
+def charger():
+    try:
+        return json.load(open(ETAT))
+    except Exception:
+        return {"front": "home", "film": {"pos": 0.0, "jeu": False, "t": time.time()}, "yt": None}
+
+def avancer(e):
+    now = time.time()
+    f = e["film"]
+    if f["jeu"]:
+        f["pos"] += now - f["t"]
+    f["t"] = now
+    y = e.get("yt")
+    if y:
+        if y["jeu"]:
+            y["pos"] += now - y["t"]
+        y["t"] = now
+
+args = sys.argv[1:]
+cmds, i = [], 0
+while i < len(args):
+    if args[i].startswith("--"):
+        i += 2
+        continue
+    cmds.append(args[i]); i += 1
+e = charger(); avancer(e)
+sortie = ""
+for c in cmds:
+    if LOG:
+        open(LOG, "a").write("%.1f %s\n" % (time.time(), c))
+    if c == "playing":
+        if e["front"] == "infuse":
+            f = e["film"]
+            sortie += "Media type: Video\nDevice state: %s\nTitle: %s\nPosition: %d/%ds\n" % ("Playing" if f["jeu"] else "Paused", FILM[0], int(f["pos"]), FILM[1])
+        elif e["front"] == "youtube" and e.get("yt"):
+            y = e["yt"]
+            sortie += "Media type: Video\nDevice state: %s\nTitle: %s\nPosition: %d/%ds\n" % ("Playing" if y["jeu"] else "Paused", y["titre"], int(y["pos"]), y["total"])
+        else:
+            sortie += "Device state: Idle\n"
+    elif c == "power_state":
+        sortie += "PowerState.On\n"
+    elif c.startswith("launch_app="):
+        cible = c.split("=", 1)[1]
+        if cible.startswith("infuse://"):
+            if INDEX_DELAI:
+                e.setdefault("infuse_essai_t", time.time())
+            if INDEX_DELAI and time.time() - e["infuse_essai_t"] < INDEX_DELAI:
+                e["front"] = "recherche"     # Infuse cherche encore : rien ne joue, comme un média pas encore indexé
+            else:
+                e["front"] = "infuse"; e["film"].update(jeu=True, pos=max(e["film"]["pos"], 100.0), t=time.time()); e["yt"] = None
+        elif cible == "com.firecore.infuse":
+            e["front"] = "infuse"; e["film"]["jeu"] = False      # de retour dans Infuse : le film reste en pause
+            e["yt"] = None
+        elif cible.startswith("youtube://"):
+            vid = cible.split("v=")[-1]
+            titre, total = VIDEOS.get(vid, ["Vidéo " + vid, 60])
+            e["film"]["jeu"] = False
+            e["front"] = "youtube"; e["yt"] = {"titre": titre, "total": total, "pos": 0.0, "jeu": True, "t": time.time()}
+    elif c == "select":
+        if e["front"] == "infuse":
+            e["film"]["jeu"] = not e["film"]["jeu"]
+    elif c == "play":
+        if e["front"] == "infuse":
+            bloquees = e.get("jouer_blocages", 0)
+            if JOUER_BLOQUE and (JOUER_BLOQUE < 0 or bloquees < JOUER_BLOQUE):
+                e["jouer_blocages"] = bloquees + 1
+            else:
+                e["film"]["jeu"] = True
+        elif e.get("yt"):
+            e["yt"]["jeu"] = True
+    elif c == "pause":
+        if e["front"] == "infuse":
+            e["film"]["jeu"] = False
+    elif c == "skip_backward":
+        if e["front"] == "infuse":
+            e["film"]["pos"] = max(0.0, e["film"]["pos"] - 10)
+json.dump(e, open(ETAT, "w"))
+sys.stdout.write(sortie)

@@ -1,0 +1,34 @@
+# Contexte de construction de l'image KamCiné (2.6.108) : liste blanche. Tout est exclu, puis seuls les fichiers
+# d'exécution sont repris. Un fichier oublié ici manque à l'image : outils/verifier_image.py le détecte.
+*
+
+# Code Python d'exécution (modules importés par app/main.py et seance.py)
+!*.py
+!requirements.txt
+!docker/entrypoint.sh
+!docker/collect_licenses.py
+!docker/constraints.txt
+!docker/licenses/http-ece-1.2.1.txt
+!docker/licenses/native-notices.txt
+!docker/licenses/rust-crates.json
+!app
+!app/icon_sombre.png
+!app/icon_clair.png
+!app/splash.jpg
+
+# Retirés : scripts hérités non importés par le service, outils de fabrication, fichiers personnels
+entracte.py
+trailers.py
+test_lumieres.py
+app/faire_icone.py
+app/Dockerfile
+app/profil.jpg
+**/__pycache__
+**/*.pyc
+**/.DS_Store
+
+!LICENSE
+!THIRD_PARTY_NOTICES.md
+# Only the approved TMDB asset is distributed.
+app/logos/*
+!app/logos/tmdb.svg

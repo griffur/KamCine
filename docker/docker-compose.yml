@@ -1,0 +1,33 @@
+# KamCiné en image autonome (2.7.10) : pour un test local ou sur un NAS Synology. Aucun creds.env, aucun montage du
+# code : seulement l'image, construite depuis ce dépôt (rien n'est publié), et le dossier ./config à côté de ce fichier.
+# Nommé docker-compose.yml pour docker-compose (v1, celui de Synology) comme pour docker compose (v2) : lancé depuis ce
+# dossier, c'est lui qui est lu, jamais un autre plus haut dans l'arborescence.
+# La procédure DEV fixe le nom kamcine-test et le port 8766, sans monter le /config de production.
+version: "2.4"
+services:
+  kamcine:
+    build:
+      context: ${KAMCINE_BUILD_CONTEXT:-..}
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${KAMCINE_VERSION:-2.7.10}
+        REVISION: ${KAMCINE_REVISION:-unknown}
+    image: kamcine:${KAMCINE_VERSION:-2.7.10}
+    container_name: ${KAMCINE_CONTAINER:-kamcine-test}
+    # Réseau de l'hôte : la découverte de l'Apple TV (mDNS, pyatv) et du pont Hue a besoin du réseau local réel.
+    network_mode: host
+    # Petit init (tini) : relaie SIGTERM et ramasse les processus fils (atvremote, seance.py).
+    init: true
+    environment:
+      # IANA timezone shared by scheduling and the interface.
+      KAMCINE_TIMEZONE: ${KAMCINE_TIMEZONE:-Europe/Zurich}
+      # Facultatif : sans valeur, le premier navigateur HTTPS initialise le sujet VAPID dans /config/push.json.
+      KAMCINE_VAPID_SUBJECT: ${KAMCINE_VAPID_SUBJECT:-}
+      KAMCINE_PORT: ${KAMCINE_PORT:-8765}
+      # Propriétaire des fichiers de ./config. Sur Synology, souvent 1026 (premier utilisateur) et 100 (users).
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+    volumes:
+      - ./config:/config
+    restart: unless-stopped
+    stop_grace_period: 20s
